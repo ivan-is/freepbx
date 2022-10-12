@@ -1,0 +1,103 @@
+version: '3.9'
+
+services:
+  freepbx-app:
+    container_name: freepbx-app
+    image: tiredofit/freepbx:15
+    ports:
+      - 8880:8880
+      - 5060:5060/udp
+      - 5160:5160/udp
+      - 18000-18100:18000-18100/udp
+      #### Flash Operator Panel
+      - 4445:4445
+    volumes:
+      - ./data/certs:/certs
+      - ./data/data:/data
+      - ./data/logs:/var/log
+      - ./data/www:/var/www/html
+      - ./data/cron:/var/spool/cron
+      ### Only Enable this option below if you set DB_EMBEDDED=TRUE
+      #- ./db:/var/lib/mysql
+
+    environment:
+      - HTTP_PORT=8880
+
+      - VIRTUAL_HOST=
+      - VIRTUAL_NETWORK=nginx-proxy
+      ### If you want to connect to the SSL Enabled Container
+      #- VIRTUAL_PORT=443
+      #- VIRTUAL_PROTO=https
+      - VIRTUAL_PORT=8880
+      - LETSENCRYPT_HOST=
+      - LETSENCRYPT_EMAIL=email@example.com
+
+      - RTP_START=18000
+      - RTP_FINISH=18100
+
+      ## Use for External MySQL Server
+      - DB_EMBEDDED=FALSE
+
+      ### These are only necessary if DB_EMBEDDED=FALSE
+      - DB_HOST=freepbx-db
+      - DB_PORT=3306
+      - DB_NAME=asterisk
+      - DB_USER=asterisk
+      - DB_PASS=
+
+      # Enable Flash Operator Panel
+      - ENABLE_FOP=TRUE
+
+      ### If you are using TLS Support for Apache to listen on 443 in the container drop them in /certs and set these:
+      #- TLS_CERT=cert.pem
+      #- TLS_KEY=key.pem
+
+    restart: always
+    networks:
+      - proxy-tier
+
+    ### These final lines are for Fail2ban. If you don't want, comment and also add ENABLE_FAIL2BAN=FALSE to your environment
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+
+  freepbx-db:
+    container_name: freepbx-db
+    image: tiredofit/mariadb
+    restart: always
+    volumes:
+      - ./data/db:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=
+      - MYSQL_DATABASE=asterisk
+      - MYSQL_USER=asterisk
+      - MYSQL_PASSWORD=
+    networks:
+      - proxy-tier
+
+  freepbx-db-backup:
+    container_name: freepbx-db-backup
+    image: tiredofit/db-backup
+    links:
+      - freepbx-db
+    volumes:
+      - ./data/dbbackup:/backup
+    environment:
+      - DB_HOST=freepbx-db
+      - DB_TYPE=mariadb
+      - DB_NAME=asterisk
+      - DB_USER=asterisk
+      - DB_PASS=
+      - DB_DUMP_FREQ=1440
+      - DB_DUMP_BEGIN=0000
+      - DB_CLEANUP_TIME=8640
+      - COMPRESSION=BZ
+      - MD5=TRUE
+    networks:
+      - proxy-tier
+    restart: always
+
+networks:
+  proxy-tier:
+    driver: bridge
+    name: nginx-proxy
